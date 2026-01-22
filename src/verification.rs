@@ -1,7 +1,6 @@
 use base64::{engine::general_purpose, Engine};
 use chrono::Local;
 use flate2::{write::GzEncoder, Compression};
-use hex;
 use hmac::{Hmac, Mac};
 use md5::{Digest, Md5};
 use openssl::{
@@ -104,7 +103,6 @@ pub fn get_did(client: &Client) -> String {
     des_target.insert("tn".to_string(), json!(format!("{:x}", Md5::digest(get_tn(&des_target).as_bytes()))));
     let compressed_data = gzip_compress(&apply_des_rules(&des_target, &des_rules));
     let encrypted = aes_encrypt(&compressed_data, pri_id_hex.as_bytes());
-    // println!("Final: {}", encrypted);
     let response: Value = retry_request(|| {
         let resp = client
             .post("https://fp-it.portal101.cn/deviceprofile/v4")
@@ -125,7 +123,7 @@ pub fn get_did(client: &Client) -> String {
         eprintln!("{}", response);
         panic!("D_ID calculation failed!");
     }
-    return format!("B{}", response["detail"]["deviceId"].as_str().unwrap());
+    format!("B{}", response["detail"]["deviceId"].as_str().unwrap())
 }
 
 fn des_encrypt(key: &[u8], data: &[u8]) -> Vec<u8> {
@@ -154,7 +152,7 @@ fn des_encrypt(key: &[u8], data: &[u8]) -> Vec<u8> {
         cipher.encrypt_block(&mut block_arr);
         result.extend_from_slice(block_arr.as_slice());
     }
-    return result;
+    result
 }
 
 fn apply_des_rules(input: &Map<String, Value>, rules: &HashMap<String, HashMap<String, Value>>) -> Map<String, Value> {
@@ -187,31 +185,29 @@ fn apply_des_rules(input: &Map<String, Value>, rules: &HashMap<String, HashMap<S
             result.insert(key.clone(), value.clone());
         }
     }
-    return result;
+    result
 }
 
 fn gzip_compress(input: &Map<String, Value>) -> Vec<u8> {
     let json_str = serde_json::to_string(input).unwrap();
     let mut encoder = GzEncoder::new(Vec::new(), Compression::new(2));
     encoder.write_all(json_str.as_bytes()).unwrap();
-    return encoder.finish().expect("Failed to finish compression");
+    encoder.finish().expect("Failed to finish compression")
 }
 
 fn get_tn(data: &Map<String, Value>) -> String {
     let mut sorted_keys: Vec<_> = data.keys().collect();
     sorted_keys.sort();
-    let mut result = String::new();
-    for key in sorted_keys {
-        let value = &data[key];
+    sorted_keys.iter().map(|key| {
+        let value = &data[*key];
         if let Some(number) = value.as_i64() {
-            result.push_str(&(number * 10000).to_string());
+            (number * 10000).to_string()
         } else if let Some(object) = value.as_object() {
-            result.push_str(&get_tn(object));
+            get_tn(object)
         } else {
-            result.push_str(value.as_str().unwrap_or(""));
+            value.as_str().unwrap_or("").to_string()
         }
-    }
-    return result;
+    }).collect()
 }
 
 fn aes_encrypt(data: &[u8], key: &[u8]) -> String {
@@ -220,7 +216,7 @@ fn aes_encrypt(data: &[u8], key: &[u8]) -> String {
     let cipher = Cipher::aes_128_cbc();
     // Manually pad to a multiple of 16 bytes
     let mut padded_data = ascii_data.to_vec();
-    while padded_data.len() % 16 != 0 {
+    while !padded_data.len().is_multiple_of(16) {
         padded_data.push(0);
     }
     let mut crypter = Crypter::new(cipher, Mode::Encrypt, key, Some(b"0102030405060708")).unwrap();
@@ -241,12 +237,8 @@ fn get_smid() -> String {
     let mut hasher = Md5::new();
     hasher.update(format!("smsk_web_{}", v).as_bytes());
     let smsk_web = hasher.finalize();
-    let mut result = String::from(v);
-    for byte in &smsk_web[0..7] {
-        result.push_str(&format!("{:02x}", byte));
-    }
-    result.push('0');
-    return result;
+    let suffix: String = smsk_web[0..7].iter().map(|b| format!("{:02x}", b)).collect();
+    format!("{}{}0", v, suffix)
 }
 
 pub fn generate_signature(token: &str, path: &str, body_or_query: &str, did: &str) -> (String, HashMap<String, Value>) {
@@ -260,5 +252,5 @@ pub fn generate_signature(token: &str, path: &str, body_or_query: &str, did: &st
     let mut hasher = Md5::new();
     hasher.update(hex_s.as_bytes());
     let md5_hex = format!("{:x}", hasher.finalize());
-    return (md5_hex, header_ca);
+    (md5_hex, header_ca)
 }

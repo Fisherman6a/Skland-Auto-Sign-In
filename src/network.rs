@@ -8,10 +8,7 @@ pub fn retry_request<T>(mut f: impl FnMut() -> Result<T, Error>) -> T {
     for attempt in 1..=*MAX_RETRIES {
         match f() {
             Ok(val) => return val,
-            Err(e) => {
-                eprintln!("Attempt {attempt} failed: {e}");
-                // sleep(Duration::from_secs(1));
-            }
+            Err(e) => eprintln!("Attempt {attempt} failed: {e}"),
         }
     }
     panic!("Failed after {} attempts", *MAX_RETRIES)

@@ -9,11 +9,7 @@ use url::Url;
 use crate::network::retry_request;
 use crate::verification;
 
-// fn is_debug_enabled() -> bool {
-//     return ["ACTIONS_RUNNER_DEBUG", "ACTIONS_STEP_DEBUG", "MANUAL_DEBUG"]
-//         .iter()
-//         .any(|env_key| env::var(env_key).map_or(false, |env_val| env_val.to_lowercase() == "true"));
-// }
+const USER_AGENT: &str = "Mozilla/5.0 (Linux; Android 12; SM-A5560 Build/V417IR; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/101.0.4951.61 Safari/537.36; SKLand/1.52.1";
 
 pub fn get_tokens() -> Vec<String> {
     let tokens: Vec<String> = match env::var("USER_TOKENS") {
@@ -31,20 +27,17 @@ pub fn get_tokens() -> Vec<String> {
     } else {
         println!("Got {} user tokens successfully!", tokens.len());
     }
-    return tokens;
+    tokens
 }
 
 pub fn generate_headers(client: &Client) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    headers.insert(
-        "User-Agent",
-        HeaderValue::from_static("Mozilla/5.0 (Linux; Android 12; SM-A5560 Build/V417IR; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/101.0.4951.61 Safari/537.36; SKLand/1.52.1"),
-    );
+    headers.insert("User-Agent", HeaderValue::from_static(USER_AGENT));
     headers.insert("Accept-Encoding", HeaderValue::from_static("gzip"));
     headers.insert("Connection", HeaderValue::from_static("close"));
     headers.insert("X-Requested-With", HeaderValue::from_static("com.hypergryph.skland"));
     headers.insert("dId", HeaderValue::from_str(&verification::get_did(client)).unwrap());
-    return headers;
+    headers
 }
 
 pub fn get_authorization(client: &Client, headers: &HeaderMap, token: &str) -> String {
@@ -60,7 +53,7 @@ pub fn get_authorization(client: &Client, headers: &HeaderMap, token: &str) -> S
     if authorization_response["status"] != 0 {
         panic!("Failed to get authorization: {}", authorization_response["message"]);
     }
-    return authorization_response["data"]["code"].as_str().expect("Not a String!").to_string();
+    authorization_response["data"]["code"].as_str().expect("Not a String!").to_string()
 }
 
 pub fn get_credential(client: &Client, headers: &HeaderMap, authorization: &str) -> Value {
@@ -76,7 +69,7 @@ pub fn get_credential(client: &Client, headers: &HeaderMap, authorization: &str)
     if credential_response["code"] != 0 {
         panic!("Failed to get credential: {}", credential_response["message"]);
     }
-    return credential_response["data"].clone();
+    credential_response["data"].clone()
 }
 
 pub fn do_sign(cred_resp: &Value) {
@@ -84,10 +77,7 @@ pub fn do_sign(cred_resp: &Value) {
     let cred = cred_resp["cred"].as_str().unwrap();
     let client = Client::new();
     let mut http_header = HeaderMap::new();
-    http_header.insert(
-        "User-Agent",
-        HeaderValue::from_static("Mozilla/5.0 (Linux; Android 12; SM-A5560 Build/V417IR; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/101.0.4951.61 Safari/537.36; SKLand/1.52.1"),
-    );
+    http_header.insert("User-Agent", HeaderValue::from_static(USER_AGENT));
     http_header.insert("Accept-Encoding", HeaderValue::from_static("gzip"));
     http_header.insert("Connection", HeaderValue::from_static("close"));
     http_header.insert("X-Requested-With", HeaderValue::from_static("com.hypergryph.skland"));
@@ -100,10 +90,10 @@ pub fn do_sign(cred_resp: &Value) {
         let nick_name = character["nickName"].as_str().unwrap_or("Unknown");
         let channel_name = character["channelName"].as_str().unwrap_or("Unknown");
 
-        if app_code == "arknights" {
-            sign_for_arknights(&client, &http_header, http_token, &character, game_name, nick_name, channel_name);
-        } else if app_code == "endfield" {
-            sign_for_endfield(&client, &http_header, http_token, &character, game_name, nick_name, channel_name);
+        match app_code {
+            "arknights" => sign_for_arknights(&client, &http_header, http_token, &character, game_name, nick_name, channel_name),
+            "endfield" => sign_for_endfield(&client, &http_header, http_token, &character, game_name, nick_name, channel_name),
+            _ => {}
         }
     }
 }
@@ -179,29 +169,31 @@ fn get_binding_list(http_header: &HeaderMap, http_token: &str) -> Vec<Value> {
         }
         return vec![];
     }
-    let mut binding_list = Vec::new();
-    for i in resp["data"]["list"].as_array().unwrap() {
-        let app_code = i["appCode"].as_str().unwrap();
-        if app_code != "arknights" && app_code != "endfield" {
-            continue;
-        }
-        for binding in i["bindingList"].as_array().unwrap() {
-            let mut binding_with_app_code = binding.clone();
-            binding_with_app_code["appCode"] = json!(app_code);
-            binding_list.push(binding_with_app_code);
-        }
-    }
-    return binding_list;
+    resp["data"]["list"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|i| {
+            let app_code = i["appCode"].as_str()?;
+            if app_code != "arknights" && app_code != "endfield" {
+                return None;
+            }
+            Some(i["bindingList"].as_array()?.iter().map(|binding| {
+                let mut b = binding.clone();
+                b["appCode"] = json!(app_code);
+                b
+            }).collect::<Vec<_>>())
+        })
+        .flatten()
+        .collect()
 }
 
 fn get_sign_header(url: &str, method: &str, body: Option<&str>, header: &HeaderMap, token: &str) -> HeaderMap {
     let parsed_url = Url::parse(url).expect("Invalid URL");
-    let did = header.get("dId").map(|v| v.to_str().unwrap_or("")).unwrap_or("");
-    let (sign, header_ca) = if method.to_lowercase() == "get" {
-        let query = parsed_url.query().unwrap_or("");
-        verification::generate_signature(token, parsed_url.path(), query, did)
-    } else {
-        verification::generate_signature(token, parsed_url.path(), body.unwrap_or(""), did)
+    let did = header.get("dId").and_then(|v| v.to_str().ok()).unwrap_or("");
+    let (sign, header_ca) = match method.to_lowercase().as_str() {
+        "get" => verification::generate_signature(token, parsed_url.path(), parsed_url.query().unwrap_or(""), did),
+        _ => verification::generate_signature(token, parsed_url.path(), body.unwrap_or(""), did),
     };
     let mut header_clone = header.clone();
     header_clone.insert("sign", sign.parse().unwrap());
@@ -215,5 +207,5 @@ fn get_sign_header(url: &str, method: &str, body: Option<&str>, header: &HeaderM
             },
         );
     }
-    return header_clone;
+    header_clone
 }
