@@ -249,10 +249,10 @@ fn get_smid() -> String {
     return result;
 }
 
-pub fn generate_signature(token: &str, path: &str, body_or_query: &str) -> (String, HashMap<String, Value>) {
+pub fn generate_signature(token: &str, path: &str, body_or_query: &str, did: &str) -> (String, HashMap<String, Value>) {
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
-    let header_ca: HashMap<String, Value> = serde_json::from_value(json!({"platform": "", "timestamp": timestamp, "dId": "", "vName": ""})).unwrap();
-    let header_ca_str = format!(r#"{{"platform":"","timestamp":"{}","dId":"","vName":""}}"#, timestamp);
+    let header_ca: HashMap<String, Value> = serde_json::from_value(json!({"platform": "3", "timestamp": timestamp, "dId": did, "vName": "1.0.0"})).unwrap();
+    let header_ca_str = format!(r#"{{"platform":"3","timestamp":"{}","dId":"{}","vName":"1.0.0"}}"#, timestamp, did);
     let s = format!("{}{}{}{}", path, body_or_query, timestamp, header_ca_str);
     let mut mac = Hmac::<Sha256>::new_from_slice(token.as_bytes()).unwrap();
     mac.update(s.as_bytes());

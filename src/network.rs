@@ -1,6 +1,6 @@
 use once_cell::sync::Lazy;
 use reqwest::Error;
-use std::{env, thread::sleep, time::Duration};
+use std::env;
 
 pub static MAX_RETRIES: Lazy<usize> = Lazy::new(|| env::var("MAX_RETRIES").ok().and_then(|s| s.parse().ok()).unwrap_or(3));
 
