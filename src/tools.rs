@@ -143,7 +143,7 @@ fn sign_for_endfield(client: &Client, http_header: &HeaderMap, http_token: &str,
             let resp = client.post(url).headers(headers.clone()).send()?.json()?;
             Ok(resp)
         });
-        if response["code"].as_str().unwrap_or("") != "10000" {
+        if response["code"].as_i64().unwrap_or(-1) != 0 {
             eprintln!(
                 "[{}]{}({}) sign-in failed! Reason: {}",
                 game_name, role_nickname, channel_name,
@@ -151,7 +151,19 @@ fn sign_for_endfield(client: &Client, http_header: &HeaderMap, http_token: &str,
             );
             continue;
         }
-        println!("[{}]{}({}) signed in successfully! Response: {}", game_name, role_nickname, channel_name, response);
+        let awards: Vec<String> = response["data"]["awardIds"]
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|award| {
+                let id = award["id"].as_str()?;
+                let info = &response["data"]["resourceInfoMap"][id];
+                let name = info["name"].as_str()?;
+                let count = info["count"].as_i64().unwrap_or(1);
+                Some(format!("「{}」×{}", name, count))
+            })
+            .collect();
+        println!("[{}]{}({}) signed in successfully and received {}.", game_name, role_nickname, channel_name, awards.join(", "));
     }
 }
 
